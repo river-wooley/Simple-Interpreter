@@ -15,8 +15,12 @@
 #include <unordered_map>
 #include <typeinfo>
 #include <limits>
+#include <algorithm>
 #include <fstream>
 #include <sstream>
+#include <cctype>
+
+std::string quotes(const std::string& s);
 
 enum L_datatype{INTEGER, BOOLEAN, STRING};
 
@@ -28,7 +32,7 @@ struct L_var{
     L_var() {}
     L_var(int i) : s(std::to_string(i)), datatype(L_datatype::INTEGER) {}
     L_var(bool b) : s(std::to_string(b)), datatype(L_datatype::BOOLEAN) {}
-    L_var(const std::string& s) : s(s), datatype(L_datatype::STRING) {}
+    L_var(const std::string& s) : s(quotes(s)), datatype(L_datatype::STRING) {}
 };
 
 void interpret_file(const std::string& file);
@@ -43,7 +47,8 @@ void parse_reserved_words(const std::vector<std::string>& tokens,
 bool stob(const std::string& s);
 bool in_quotes(const std::string& s);
 std::string remove_quotes(const std::string& s);
-std::string quotes(const std::string& s);
+bool is_word(const std::string& s);
+bool is_alpha(char c);
 
 int main(int argc, char** argv) {
     if (argc != 2) {
@@ -78,9 +83,12 @@ void parse_line_tokens(const std::vector<std::string>& tokens,
 
 void parse_operator_tokens(const std::vector<std::string>& tokens,
         std::unordered_map<std::string, L_var>& vars) {
+    if (tokens.size() < 3) {
+        return;
+    }
     if (tokens[1] == "=" && vars.find(tokens[2]) == vars.end()) {
         // Assignment
-        vars[tokens[0]] = (in_quotes(tokens[2])) 
+        vars[tokens[0]] = is_word(tokens[2])
             ? L_var(tokens[2]) : L_var(std::stoi(tokens[2]));
     } else if (tokens[1] == "=") {
         vars[tokens[0]] = vars[tokens[2]];
@@ -91,7 +99,7 @@ void parse_operator_tokens(const std::vector<std::string>& tokens,
             ? remove_quotes(vars[tokens[0]].s) + remove_quotes(tokens[2]) :
             remove_quotes(vars[tokens[0]].s) + remove_quotes(vars[tokens[2]].s);
         vars[tokens[0]].s = quotes(concat);
-    } else if (tokens[1] == "+=" && !in_quotes(tokens[2]) 
+    } else if (tokens[1] == "+=" && !is_word(tokens[2]) 
       && vars[tokens[0]].datatype == L_datatype::INTEGER) {
         // Integer addition
         int sum = (vars.find(tokens[2]) == vars.end()) 
@@ -116,6 +124,9 @@ void parse_operator_tokens(const std::vector<std::string>& tokens,
 
 void parse_reserved_words(const std::vector<std::string>& tokens,
         std::unordered_map<std::string, L_var>& vars) {
+    if (tokens.size() < 3) {
+        return;
+    }
     if (tokens[0] == "PRINT" && vars.find(tokens[1]) != vars.end()) {
         std::cout << tokens[1] << "=" << vars[tokens[1]].s << std::endl;
     }
@@ -152,11 +163,19 @@ std::string quotes(const std::string& s) {
     return s1;
 }
 
+bool is_alpha(char c) {
+    return std::isalpha(c);
+}
+
+bool is_word(const std::string& s) {
+    return std::find_if(s.begin(), s.end(), is_alpha) != s.end();
+}
+
 std::vector<std::string> tokenize_string(const std::string& s) {
     std::vector<std::string> tokens;
     std::istringstream sin(s);
     std::string word;
-    while (sin >> word) {
+    while (sin >> std::quoted(word)) {
         tokens.push_back(word);
     }
     return tokens; 
