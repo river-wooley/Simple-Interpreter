@@ -32,7 +32,7 @@ struct L_var{
     L_var() {}
     L_var(int i) : s(std::to_string(i)), datatype(L_datatype::INTEGER) {}
     L_var(bool b) : s(std::to_string(b)), datatype(L_datatype::BOOLEAN) {}
-    L_var(const std::string& s) : s(quotes(s)), datatype(L_datatype::STRING) {}
+    L_var(const std::string& s) : s(s), datatype(L_datatype::STRING) {}
 };
 
 void interpret_file(const std::string& file);
@@ -47,8 +47,8 @@ void parse_reserved_words(const std::vector<std::string>& tokens,
 bool stob(const std::string& s);
 bool in_quotes(const std::string& s);
 std::string remove_quotes(const std::string& s);
-bool is_word(const std::string& s);
 bool is_alpha(char c);
+std::string bool_to_string(bool b);
 
 int main(int argc, char** argv) {
     if (argc != 2) {
@@ -88,18 +88,24 @@ void parse_operator_tokens(const std::vector<std::string>& tokens,
     }
     if (tokens[1] == "=" && vars.find(tokens[2]) == vars.end()) {
         // Assignment
-        vars[tokens[0]] = is_word(tokens[2])
-            ? L_var(tokens[2]) : L_var(std::stoi(tokens[2]));
+        if (in_quotes(tokens[2])) {
+            vars[tokens[0]] = L_var(tokens[2]);
+        } else if (tokens[2] == "TRUE" || tokens[2] == "FALSE") {
+            vars[tokens[0]] = L_var(stob(tokens[2]));
+        } else {
+            vars[tokens[0]] = L_var(std::stoi(tokens[2]));
+        }
     } else if (tokens[1] == "=") {
         vars[tokens[0]] = vars[tokens[2]];
     } else if (tokens[1] == "+="
-      && vars[tokens[0]].datatype == L_datatype::STRING) {
+      && vars[tokens[0]].datatype == L_datatype::STRING
+      && (in_quotes(tokens[2]) || vars.find(tokens[2]) != vars.end())) {
         // String concatenation
         std::string concat = (vars.find(tokens[2]) == vars.end())
             ? remove_quotes(vars[tokens[0]].s) + remove_quotes(tokens[2]) :
             remove_quotes(vars[tokens[0]].s) + remove_quotes(vars[tokens[2]].s);
         vars[tokens[0]].s = quotes(concat);
-    } else if (tokens[1] == "+=" && !is_word(tokens[2]) 
+    } else if (tokens[1] == "+=" && !in_quotes(tokens[2]) 
       && vars[tokens[0]].datatype == L_datatype::INTEGER) {
         // Integer addition
         int sum = (vars.find(tokens[2]) == vars.end()) 
@@ -128,8 +134,19 @@ void parse_reserved_words(const std::vector<std::string>& tokens,
         return;
     }
     if (tokens[0] == "PRINT" && vars.find(tokens[1]) != vars.end()) {
-        std::cout << tokens[1] << "=" << vars[tokens[1]].s << std::endl;
+        if (vars[tokens[1]].datatype == L_datatype::BOOLEAN) {
+            std::cout << tokens[1] << "=" << bool_to_string(stob(vars[tokens[1]].s)) << std::endl;
+        } else {
+            std::cout << tokens[1] << "=" << vars[tokens[1]].s << std::endl;
+        }
     }
+}
+
+std::string bool_to_string(bool b) {
+    std::string s;
+    b ? s = "TRUE" : s = "FALSE";
+    
+    return s;
 }
 
 bool in_quotes(const std::string& s) {
@@ -140,9 +157,10 @@ bool in_quotes(const std::string& s) {
 }
 
 bool stob(const std::string& s) {
-    std::istringstream sin;
+    // Due to conversions to strings, we check for the legacy values of true and false
     bool b;
-    sin >> b;
+    s == "0" ? b = false : b = true;
+    
     return b;
 }
 
@@ -167,16 +185,22 @@ bool is_alpha(char c) {
     return std::isalpha(c);
 }
 
-bool is_word(const std::string& s) {
-    return std::find_if(s.begin(), s.end(), is_alpha) != s.end();
-}
-
 std::vector<std::string> tokenize_string(const std::string& s) {
+    // Custom tokenize to retain quotes around quoted items
     std::vector<std::string> tokens;
-    std::istringstream sin(s);
-    std::string word;
-    while (sin >> std::quoted(word)) {
-        tokens.push_back(word);
+    size_t lastpos = 0, pos = s.find(' ');
+    while (pos != std::string::npos) {
+        tokens.push_back(s.substr(lastpos, pos - lastpos));
+        lastpos = pos + 1;
+        if (s[pos + 1] == '\"') {
+            // Skip over quotes
+            pos = s.find('\"');
+            pos = s.find('\"', pos + 1) + 1;
+        } else {
+            pos = s.find(' ', pos + 1);
+        }
     }
+    
+    tokens.push_back(s.substr(lastpos, s.size() - lastpos));
     return tokens; 
 }
