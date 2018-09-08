@@ -20,7 +20,8 @@
 #include <sstream>
 #include <cctype>
 
-std::string quotes(const std::string& s);
+size_t current_line = 0;
+bool running = true;
 
 enum L_datatype{INTEGER, BOOLEAN, STRING};
 
@@ -49,6 +50,7 @@ bool in_quotes(const std::string& s);
 std::string remove_quotes(const std::string& s);
 bool is_alpha(char c);
 std::string bool_to_string(bool b);
+std::string quotes(const std::string& s);
 
 int main(int argc, char** argv) {
     if (argc != 2) {
@@ -64,8 +66,9 @@ int main(int argc, char** argv) {
 void interpret_file(const std::string& file) {
     std::ifstream fin(file);
     std::string line;
-    while (std::getline(fin, line)) {
+    while (std::getline(fin, line) && running) {
         interpret_line(line);
+        current_line++;
     }
 }
 
@@ -138,6 +141,26 @@ void parse_reserved_words(const std::vector<std::string>& tokens,
             std::cout << tokens[1] << "=" << bool_to_string(stob(vars[tokens[1]].s)) << std::endl;
         } else {
             std::cout << tokens[1] << "=" << vars[tokens[1]].s << std::endl;
+        }
+    } else if (tokens[0] == "FOR") {
+        size_t iterations = std::stoi(tokens[1]), current_token = 3;
+        std::string current_string;
+        // Interpret each computational line in the FOR loop
+        for (size_t i = 0; i < iterations; i++) {
+            while (current_token < tokens.size()) {
+                if (current_string.size() > 0) {
+                    current_string += " ";
+                }
+                current_string += tokens[current_token];
+                if (tokens[current_token] == ";") {
+                    interpret_line(current_string);
+                    current_string.clear();
+                }
+                
+                current_token++;
+            }
+            current_token = 3;
+            current_string.clear();
         }
     }
 }
