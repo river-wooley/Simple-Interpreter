@@ -20,7 +20,7 @@
 #include <sstream>
 #include <cctype>
 
-size_t current_line = 0;
+size_t current_line = 1;
 bool running = true;
 
 enum L_datatype{INTEGER, BOOLEAN, STRING};
@@ -45,6 +45,14 @@ void parse_operator_tokens(const std::vector<std::string>& tokens,
         std::unordered_map<std::string, L_var>& vars);
 void parse_reserved_words(const std::vector<std::string>& tokens,
         std::unordered_map<std::string, L_var>& vars);
+void parse_plusequals(const std::vector<std::string>& tokens,
+        std::unordered_map<std::string, L_var>& vars);
+void parse_other_operators(const std::vector<std::string>& tokens,
+        std::unordered_map<std::string, L_var>& vars);
+void FOR(const std::vector<std::string>& tokens);
+void interpret_FOR_token(const std::vector<std::string>& tokens,
+        std::string& current_string, int& nested_open_curly_count,
+        int& nested_closed_curly_count, int current_token);
 bool stob(const std::string& s);
 bool in_quotes(const std::string& s);
 std::string remove_quotes(const std::string& s);
@@ -74,14 +82,71 @@ void interpret_file(const std::string& file) {
 
 void interpret_line(const std::string& line) {
     static std::unordered_map<std::string, L_var> variables;
-    std::vector<std::string> tokens = tokenize_string(line);
-    parse_line_tokens(tokens, variables);
+    // Interpret each statement separated by ;
+    size_t pos = line.find_last_of("}"), lastpos = 0;
+    if (pos == std::string::npos) {
+        pos = line.find(";");
+    }
+    std::string statement;
+    while (pos != std::string::npos) {
+        statement = line.substr(lastpos, pos + 1);
+        lastpos = pos + 2;
+        pos = line.find(";", lastpos);
+        std::vector<std::string> tokens = tokenize_string(statement);
+        parse_line_tokens(tokens, variables);
+    }
 }
 
 void parse_line_tokens(const std::vector<std::string>& tokens,
         std::unordered_map<std::string, L_var>& vars) {
     parse_operator_tokens(tokens, vars);
     parse_reserved_words(tokens, vars);
+}
+
+void parse_plusequals(const std::vector<std::string>& tokens,
+        std::unordered_map<std::string, L_var>& vars) {
+    if (tokens[1] == "+="
+      && vars[tokens[0]].datatype == L_datatype::STRING
+      && (in_quotes(tokens[2]) || vars.find(tokens[2]) != vars.end())) {
+        // String concatenation
+        std::string concat = (vars.find(tokens[2]) == vars.end())
+            ? remove_quotes(vars[tokens[0]].s) + remove_quotes(tokens[2]) :
+            remove_quotes(vars[tokens[0]].s) + remove_quotes(vars[tokens[2]].s);
+        vars[tokens[0]].s = quotes(concat);
+    } else if (tokens[1] == "+=" && !in_quotes(tokens[2]) 
+      && vars[tokens[0]].datatype == L_datatype::INTEGER) {
+        // Integer addition
+        int sum = (vars.find(tokens[2]) == vars.end()) 
+            ? std::stoi(vars[tokens[0]].s) + std::stoi(tokens[2]) : 
+                std::stoi(vars[tokens[0]].s) + std::stoi(vars[tokens[2]].s);
+        vars[tokens[0]].s = std::to_string(sum);
+    } else if (tokens[1] == "+=") {
+        // Error handling
+        running = false;
+        std::cout << "RUNTIME ERROR: line " << current_line << std::endl;
+    }
+}
+
+void parse_other_operators(const std::vector<std::string>& tokens,
+        std::unordered_map<std::string, L_var>& vars) {
+    if (tokens[1] == "*=" 
+      && vars[tokens[0]].datatype == L_datatype::INTEGER) {
+        // Integer multiplication
+        int product = (vars.find(tokens[2]) == vars.end()) 
+            ? std::stoi(vars[tokens[0]].s) * std::stoi(tokens[2]) : 
+                std::stoi(vars[tokens[0]].s) * std::stoi(vars[tokens[2]].s);
+        vars[tokens[0]].s = std::to_string(product);
+    } else if (tokens[1] == "&=" 
+      && vars[tokens[0]].datatype == L_datatype::BOOLEAN) {
+        // And-Equals
+        bool other = (tokens[2] == "TRUE");
+        bool result = stob(vars[tokens[0]].s) && other;
+        vars[tokens[0]].s = std::to_string(result);
+    } else if (tokens[1] == "&=" || tokens[1] == "*=") {
+        // Error handling
+        running = false;
+        std::cout << "RUNTIME ERROR: line " << current_line << std::endl;
+    }
 }
 
 void parse_operator_tokens(const std::vector<std::string>& tokens,
@@ -100,34 +165,45 @@ void parse_operator_tokens(const std::vector<std::string>& tokens,
         }
     } else if (tokens[1] == "=") {
         vars[tokens[0]] = vars[tokens[2]];
-    } else if (tokens[1] == "+="
-      && vars[tokens[0]].datatype == L_datatype::STRING
-      && (in_quotes(tokens[2]) || vars.find(tokens[2]) != vars.end())) {
-        // String concatenation
-        std::string concat = (vars.find(tokens[2]) == vars.end())
-            ? remove_quotes(vars[tokens[0]].s) + remove_quotes(tokens[2]) :
-            remove_quotes(vars[tokens[0]].s) + remove_quotes(vars[tokens[2]].s);
-        vars[tokens[0]].s = quotes(concat);
-    } else if (tokens[1] == "+=" && !in_quotes(tokens[2]) 
-      && vars[tokens[0]].datatype == L_datatype::INTEGER) {
-        // Integer addition
-        int sum = (vars.find(tokens[2]) == vars.end()) 
-            ? std::stoi(vars[tokens[0]].s) + std::stoi(tokens[2]) : 
-                std::stoi(vars[tokens[0]].s) + std::stoi(vars[tokens[2]].s);
-        vars[tokens[0]].s = std::to_string(sum);
-    } else if (tokens[1] == "*=" 
-      && vars[tokens[0]].datatype == L_datatype::INTEGER) {
-        // Integer multiplication
-        int product = (vars.find(tokens[2]) == vars.end()) 
-            ? std::stoi(vars[tokens[0]].s) * std::stoi(tokens[2]) : 
-                std::stoi(vars[tokens[0]].s) * std::stoi(vars[tokens[2]].s);
-        vars[tokens[0]].s = std::to_string(product);
-    } else if (tokens[1] == "&=" 
-      && vars[tokens[0]].datatype == L_datatype::BOOLEAN) {
-        // And-Equals
-        bool other = (tokens[2] == "TRUE");
-        bool result = stob(vars[tokens[0]].s) && other;
-        vars[tokens[0]].s = std::to_string(result);
+    } else {
+        parse_plusequals(tokens, vars);
+        parse_other_operators(tokens, vars);
+    }
+}
+
+void FOR(const std::vector<std::string>& tokens) {
+    size_t iterations = std::stoi(tokens[1]), current_token = 3,
+            nested_open_curly_count = 0, nested_closed_curly_count = 0;
+    std::string current_string;
+    // Interpret each computational line in the FOR loop
+    for (size_t i = 0; i < iterations; i++) {
+        while (current_token < tokens.size()) {
+            if (current_string.size() > 0) {
+                current_string += " ";
+            }
+            current_string += tokens[current_token];
+            // Check for nested for loops
+            if (tokens[current_token] == "{") {
+                nested_open_curly_count++;
+            } else if (tokens[current_token] == "}") {
+                nested_closed_curly_count++;
+                if (nested_open_curly_count == nested_closed_curly_count) {
+                    interpret_line(current_string);
+                    current_string.clear();
+                    nested_open_curly_count = 0;
+                    nested_closed_curly_count = 0;
+                }
+            } else if (nested_open_curly_count == 0 &&
+                    tokens[current_token] == ";") {
+                interpret_line(current_string);
+                current_string.clear();
+            }
+            current_token++;
+        }
+        current_token = 3;
+        current_string.clear();
+        // Account for curly brace at the end of a for-loop
+        nested_closed_curly_count = 0;
     }
 }
 
@@ -138,30 +214,13 @@ void parse_reserved_words(const std::vector<std::string>& tokens,
     }
     if (tokens[0] == "PRINT" && vars.find(tokens[1]) != vars.end()) {
         if (vars[tokens[1]].datatype == L_datatype::BOOLEAN) {
-            std::cout << tokens[1] << "=" << bool_to_string(stob(vars[tokens[1]].s)) << std::endl;
+            std::cout << tokens[1] << "=" 
+                      << bool_to_string(stob(vars[tokens[1]].s)) << std::endl;
         } else {
             std::cout << tokens[1] << "=" << vars[tokens[1]].s << std::endl;
         }
     } else if (tokens[0] == "FOR") {
-        size_t iterations = std::stoi(tokens[1]), current_token = 3;
-        std::string current_string;
-        // Interpret each computational line in the FOR loop
-        for (size_t i = 0; i < iterations; i++) {
-            while (current_token < tokens.size()) {
-                if (current_string.size() > 0) {
-                    current_string += " ";
-                }
-                current_string += tokens[current_token];
-                if (tokens[current_token] == ";") {
-                    interpret_line(current_string);
-                    current_string.clear();
-                }
-                
-                current_token++;
-            }
-            current_token = 3;
-            current_string.clear();
-        }
+        FOR(tokens);
     }
 }
 
@@ -180,7 +239,8 @@ bool in_quotes(const std::string& s) {
 }
 
 bool stob(const std::string& s) {
-    // Due to conversions to strings, we check for the legacy values of true and false
+    // Due to conversions to strings, we check for the legacy values 
+    // of true and false
     bool b;
     s == "0" ? b = false : b = true;
     
